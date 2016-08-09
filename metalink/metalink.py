@@ -7,22 +7,25 @@
 # E-mail: nabber00@gmail.com
 #
 # Copyright: (C) 2007-2015, Hampus Wessman, Neil McNab
-# License: GNU General Public License Version 2
-#   (http://www.gnu.org/copyleft/gpl.html)
-#
-# This program is free software; you can redistribute it and/or modify
-# it under the terms of the GNU General Public License as published by
-# the Free Software Foundation; either version 2 of the License, or
-# (at your option) any later version.
-#
-# This program is distributed in the hope that it will be useful,
-# but WITHOUT ANY WARRANTY; without even the implied warranty of
-# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
-# GNU General Public License for more details.
-#
-# You should have received a copy of the GNU General Public License
-# along with this program; if not, write to the Free Software
-# Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307 USA
+# License: MIT
+# 
+# Permission is hereby granted, free of charge, to any person obtaining a copy 
+# of this software and associated documentation files (the "Software"), to deal 
+# in the Software without restriction, including without limitation the rights 
+# to use, copy, modify, merge, publish, distribute, sublicense, and/or sell 
+# copies of the Software, and to permit persons to whom the Software is 
+# furnished to do so, subject to the following conditions:
+# 
+# The above copyright notice and this permission notice shall be included in 
+# all copies or substantial portions of the Software.
+# 
+# THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR 
+# IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, 
+# FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE 
+# AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER 
+# LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, 
+# OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN 
+# THE SOFTWARE.
 #
 # Description:
 #   Functions for accessing XML formatted data.
@@ -30,26 +33,33 @@
 #
 ########################################################################
 
+import sys
+if sys.version_info < (3,):
+    import StringIO
+    import urllib2
+    import rfc822
+else:
+    import io as StringIO
+    import urllib.request as urllib2
+    import email as rfc822
+
 import os
 import os.path
 import hashlib
 import re
 import math
 import time
-import rfc822
 import calendar
 import xml.parsers.expat
 
 # for jigdo only
 import gzip
-import urllib2
 
 # handle missing module in jython
 try: import bz2
 except ImportError: pass
 
 import base64
-import StringIO
 import binascii
 import zlib
 
@@ -65,6 +75,7 @@ HASHMAP = { "sha256": "sha-256",
             "sha512": "sha-512",
             "sha224": "sha-224",
             "sha384": "sha-384",
+            "pgp": "application/pgp-signature",
             }
 
 def hashlookup(text):
@@ -281,7 +292,7 @@ class MetalinkFileBase:
         pass
 
     def scan_file(self, filename, use_chunks=True, max_chunks=255, chunk_size=256, progresslistener=None):
-        print "\nScanning file..."
+        print("\nScanning file...")
         # Filename and size
         self.filename = os.path.basename(filename)
         self.size = int(os.stat(filename).st_size)
@@ -291,7 +302,7 @@ class MetalinkFileBase:
             self.piecelength = 1024
             while self.size / self.piecelength > max_chunks or self.piecelength < minlength:
                 self.piecelength *= 2
-            print "Using piecelength", self.piecelength, "(" + str(self.piecelength / 1024) + " KiB)"
+            print("Using piecelength", self.piecelength, "(" + str(self.piecelength / 1024) + " KiB)")
             numpieces = self.size / self.piecelength
             if numpieces < 2: use_chunks = False
         # Hashes
@@ -312,7 +323,7 @@ class MetalinkFileBase:
         progress = 0
         while True:
             data = fp.read(4096)
-            if data == "": break
+            if data == b"": break
             # Progress updating
             if progresslistener:
                 reads_left -= 1
@@ -321,7 +332,7 @@ class MetalinkFileBase:
                     progress += 1
                     result = progresslistener.Update(progress)
                     if not get_first(result):
-                        print "Canceling scan!"
+                        print("Canceling scan!")
                         return False
             # Process the data
             if md5hash != None: md5hash.update(data)
@@ -341,16 +352,16 @@ class MetalinkFileBase:
                         data = data[numbytes:]
                         left -= numbytes
                     if length == self.piecelength:
-                        print "Done with piece hash", len(self.pieces)
+                        print("Done with piece hash " + str(len(self.pieces)))
                         self.pieces.append(piecehash.hexdigest())
                         piecehash = hashlib.sha1()
                         length = 0
         if use_chunks:
             if length > 0:
-                print "Done with piece hash", len(self.pieces)
+                print("Done with piece hash "+ str(len(self.pieces)))
                 self.pieces.append(piecehash.hexdigest())
                 piecehash = hashlib.sha1()
-            print "Total number of pieces:", len(self.pieces)
+            print("Total number of pieces: "+ str(len(self.pieces)))
         fp.close()
         self.hashlist["md5"] = md5hash.hexdigest()
         self.hashlist["sha1"] = sha1hash.hexdigest()
@@ -376,7 +387,7 @@ class MetalinkFileBase:
         # Convert to strings
         #self.size = str(self.size)
         #self.piecelength = str(self.piecelength)
-        print "done"
+        print("done")
         if progresslistener: progresslistener.Update(100)
         return True
 
@@ -467,8 +478,8 @@ class MetalinkFile4(MetalinkFileBase):
             text += '      <os>'+self.os+'</os>\n'
         # Verification
         for key in self.hashlist.keys():
-            if key == 'pgp' and self.hashlist[key] != "":
-                text += '      <signature type="%s">' % key + self.hashlist[key] + '</signature>\n'
+            if key == 'application/pgp-signature' and self.hashlist[key] != "":
+                text += '      <signature mediatype="%s">' % key + self.hashlist[key] + '</signature>\n'
             elif self.hashlist[key] != "":
                 text += '      <hash type="%s">' % hashlookup(key) + self.hashlist[key].lower() + '</hash>\n'
         if len(self.pieces) > 1:
@@ -855,7 +866,7 @@ class Metalink4(MetalinkBase):
     # handler functions
     def start_element(self, name, attrs):
         if name.startswith("http://www.metalinker.org"):
-            raise AssertionError, "Not a valid Metalink 4 (RFC) file."
+            raise AssertionError("Not a valid Metalink 4 (RFC) file.")
             
         self.data = ""
         xmlns, name = name.rsplit(XMLSEP, 1)
@@ -894,7 +905,7 @@ class Metalink4(MetalinkBase):
                 #setattr(fileobj, "hash_" + hashtype, self.data)
                 fileobj.hashlist[hashtype] = self.data.strip()
             elif name == "signature":
-                hashtype = tag.attrs["type"]
+                hashtype = tag.attrs["mediatype"]
                 fileobj = self.files[-1]
                 #setattr(fileobj, "hash_" + hashtype, self.data)
                 fileobj.hashlist[hashtype] = self.data
@@ -1092,7 +1103,7 @@ class TemplateDecompress:
             assert(len(data) == uncompressed)
             return data
         else:
-            print "Unexpected Jigdo template type %s." % type
+            print("Unexpected Jigdo template type %s." % type)
         return ""
     
     def close(self):
@@ -1121,7 +1132,7 @@ class Jigdo(Metalink):
         self.decode(self.p)
 
     def parse(self, text):
-        raise AssertionError, "Not implemented"
+        raise AssertionError("Not implemented")
 
     def decode(self, configobj):
         serverdict = {}
@@ -1219,7 +1230,7 @@ class Jigdo(Metalink):
                 chunks.append([2, sublength])
                 count += 1
             else:
-                print "Unknown DESC subtype %s." % subtype
+                print("Unknown DESC subtype %s." % subtype)
                 raise
         
         readhandle.close()
@@ -1235,7 +1246,7 @@ class Jigdo(Metalink):
                 # read data from external files, errors if hash not found
                 fileobj = self.files[self.get_file_by_hash('md5', chunk[2])]
                 if chunklen != os.stat(fileobj.filename).st_size:
-                    print "Warning: File size mismatch for %s." % fileobj.filename
+                    print("Warning: File size mismatch for %s." % fileobj.filename)
                 
                 tempfile = open(fileobj.filename, "rb")
                 filedata = tempfile.read(1024*1024)
@@ -1355,7 +1366,7 @@ def convert(metalinkobj, ver=4):
     elif metalinkobj.ver == 4 and ver == 3:
         return convert_4to3(metalinkobj)
     else:
-        raise AssertionError, "Cannot do conversion %s to %s!" % (metalinkobj.ver, ver)
+        raise AssertionError("Cannot do conversion %s to %s!" % (metalinkobj.ver, ver))
 
 def rfc3339_parsedate(datestr):
     offset = "+00:00"
@@ -1464,7 +1475,7 @@ def ed2k_hash(filename):
 
     handle = open(filename, "rb")
     data = handle.read(blocksize)
-    hashes = ""
+    hashes = b""
     md4 = None
     
     while data:

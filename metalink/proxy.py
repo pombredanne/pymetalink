@@ -7,22 +7,25 @@
 # E-mail: nabber00@gmail.com
 #
 # Copyright: (C) 2011, Neil McNab
-# License: GNU General Public License Version 2
-#   (http://www.gnu.org/copyleft/gpl.html)
-#
-# This program is free software; you can redistribute it and/or modify
-# it under the terms of the GNU General Public License as published by
-# the Free Software Foundation; either version 2 of the License, or
-# (at your option) any later version.
-#
-# This program is distributed in the hope that it will be useful,
-# but WITHOUT ANY WARRANTY; without even the implied warranty of
-# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
-# GNU General Public License for more details.
-#
-# You should have received a copy of the GNU General Public License
-# along with this program; if not, write to the Free Software
-# Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307 USA
+# License: MIT
+# 
+# Permission is hereby granted, free of charge, to any person obtaining a copy 
+# of this software and associated documentation files (the "Software"), to deal 
+# in the Software without restriction, including without limitation the rights 
+# to use, copy, modify, merge, publish, distribute, sublicense, and/or sell 
+# copies of the Software, and to permit persons to whom the Software is 
+# furnished to do so, subject to the following conditions:
+# 
+# The above copyright notice and this permission notice shall be included in 
+# all copies or substantial portions of the Software.
+# 
+# THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR 
+# IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, 
+# FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE 
+# AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER 
+# LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, 
+# OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN 
+# THE SOFTWARE.
 #
 # Description:
 #   Library to make proxied Python connections easy.
@@ -48,18 +51,31 @@
 #
 ########################################################################
 
+import sys
+
+if sys.version_info < (3,):
+    import httplib
+    import urlparse
+    import HTMLParser
+    import urllib2
+else:
+    import http.client as httplib
+    import urllib.parse as urlparse
+    import urllib.request as urllib2
+    import html.parser as HTMLParser
+    unicode = str
+    import urllib.request
+    urllib.ftpwrapper=urllib.request.ftpwrapper
+    urllib.FancyURLopener=urllib.request.FancyURLopener
+
 import os
-import urllib2
 import ftplib
-import httplib
 import urllib
 import socket
-import urlparse
 import ssl
 import base64
 import locale
 import gettext
-import sys
 
 # Configure proxies (user and password optional)
 # HTTP_PROXY = http://user:password@myproxy:port
@@ -92,7 +108,11 @@ def translate():
     if localelang == None:
         localelang = "LC_ALL"
     t = gettext.translation(base, localedir, [localelang], None, 'en')
-    return t.ugettext
+    try:
+        return t.ugettext
+    # python3
+    except:
+        return t.gettext
 
 _ = translate()
 
@@ -189,11 +209,11 @@ def get_proxy_info():
     SOCKS_PROXY=""
 
     # from environment variables
-    if os.environ.has_key('http_proxy') and HTTP_PROXY == "":
+    if 'http_proxy' in os.environ and HTTP_PROXY == "":
         HTTP_PROXY=os.environ['http_proxy']
-    if os.environ.has_key('ftp_proxy') and FTP_PROXY == "":
+    if 'ftp_proxy' in os.environ and FTP_PROXY == "":
         FTP_PROXY=os.environ['ftp_proxy']
-    if os.environ.has_key('https_proxy') and HTTPS_PROXY == "":
+    if 'https_proxy' in os.environ and HTTPS_PROXY == "":
         HTTPS_PROXY=os.environ['https_proxy']
 
     # from IE in registry
@@ -247,9 +267,9 @@ class ftpwrapper(urllib.ftpwrapper):
             try:
                 cmd = 'RETR ' + self.dir + file
                 conn = self.ftp.ntransfercmd(cmd)
-            except ftplib.error_perm, reason:
+            except ftplib.error_perm as reason:
                 if str(reason)[:3] != '550':
-                    raise IOError, ('ftp error', reason), sys.exc_info()[2]
+                    raise IOError(('ftp error', reason), sys.exc_info()[2])
                     
         self.busy = 1
         # Pass back both a suitably decorated object and a retrieval length
@@ -281,8 +301,8 @@ class HTTPHandler(urllib2.HTTPHandler):
         return urllib2.HTTPHandler.do_open(self, HTTPConnection, req)
 
 class ConnectHTTPSHandler(urllib2.HTTPSHandler):
-    def do_open(self, http_class, req):
-        return urllib2.HTTPSHandler.do_open(self, HTTPSConnection, req)
+    def do_open(self, http_class, req, *args, **kwargs):
+        return urllib2.HTTPSHandler.do_open(self, HTTPSConnection, req, *args, **kwargs)
 
 def set_proxies():
     # Set proxies
@@ -323,7 +343,7 @@ class FTP(ftplib.FTP):
             # parse proxy URL
             url = urlparse.urlparse(FTP_PROXY)
             if not (url[0] == "" or url[0] == "http"):
-                raise AssertionError, _("Transport not supported for FTP_PROXY, %s") % url.scheme
+                raise AssertionError(_("Transport not supported for FTP_PROXY, %s") % url.scheme)
             
             port = httplib.HTTP_PORT
             if url[1].find("@") != -1:
@@ -418,7 +438,7 @@ class HTTPConnection(httplib.HTTPConnection):
         if HTTP_PROXY != "":
             proxy = urlparse.urlparse(HTTP_PROXY)
             if not (proxy.scheme == "" or proxy.scheme == "http"):
-                raise AssertionError, "Transport %s not supported for HTTP_PROXY" % proxy.scheme
+                raise AssertionError("Transport %s not supported for HTTP_PROXY" % proxy.scheme)
 
             host = proxy.hostname
             
@@ -448,7 +468,7 @@ class HTTPSConnection(httplib.HTTPSConnection):
             headers = {}
             proxy = urlparse.urlparse(HTTPS_PROXY)
             if not (proxy.scheme == "" or proxy.scheme == "http"):
-                raise AssertionError, "Transport %s not supported for HTTPS_PROXY" % proxy.scheme
+                raise AssertionError("Transport %s not supported for HTTPS_PROXY" % proxy.scheme)
 
             if proxy.username is not None:
                 userpass = base64.encodestring(proxy.username+':'+proxy.password)
@@ -509,9 +529,6 @@ class HTTPSConnection(httplib.HTTPSConnection):
 ##    print "closing"
 ##    c.close()
 ##    print "closed"
-##    c = HTTPSConnection("www.nabber.org")
-##    c.request("GET", "https://www.nabber.org/")
-##    print len(c.getresponse().read())
 
 #    HTTP_PROXY = "user:password@localhost:8000"
 #    HTTPS_PROXY = "user:password@localhost:8000"
